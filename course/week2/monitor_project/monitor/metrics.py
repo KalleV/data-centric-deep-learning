@@ -38,15 +38,17 @@ def get_hist_score(tr_probs, te_probs, bins=10):
 
 
 def get_vocab_outlier(tr_vocab, te_vocab):
-  # Compute the number of words in the test vocabulary that are also in the training vocabulary
-  num_seen = sum(1 for word in te_vocab if word in tr_vocab)
   num_total = len(te_vocab)
+  
+  if num_total == 0:
+    return 0
+  
+  num_seen = sum(1 for word in te_vocab if word in tr_vocab)
   
   # Compute the outlier score
   score = 1 - (num_seen / num_total)
   
   return score
-
 
 class MonitoringSystem:
 

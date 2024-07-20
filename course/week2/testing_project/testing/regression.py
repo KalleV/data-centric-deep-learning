@@ -114,6 +114,4 @@ class MNISTRegressionTest(BaseTest):
 
   def test(self, trainer, system):
     loader = self.get_dataloader()
-    # Pass the dataloader to the trainer and call `test`.
-    # Our solution is one line of code
     trainer.test(system, dataloaders = loader)

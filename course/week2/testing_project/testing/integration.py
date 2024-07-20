@@ -50,22 +50,10 @@ class MNISTIntegrationTest(BaseTest):
     return loader
 
   def test(self, trainer, system):
-    # ================================
-    # FILL ME OUT
-    #
-    # Create a dataloader, and pass it to the trainer and call `test`.
-    # Our solution is two lines of code.
-    #
-    # Pseudocode:
-    # --
-    # loader = ...
-    # pass loader to trainer and call test
-    #
-    # Notes:
-    # --
-    # Nothing to return here
-    pass  # remove me
-    # ================================
+    # Create a dataloader
+    loader = self.get_dataloader()
+    # Pass the dataloader to the trainer and call the test method
+    trainer.test(system, dataloaders=loader)
 
 
 class MNISTIntegrationDataset(Dataset):

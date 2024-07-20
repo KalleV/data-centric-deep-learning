@@ -57,50 +57,11 @@ def build_regression_test(system, loader):
     # the actual prediction is the argmax of the logits
     preds = torch.argmax(logits, dim=1)
 
-    batch_is_correct = []
-    batch_loss = []
-    # ================================
-    # FILL ME OUT
-    # 
-    # Your task is to add elements to `batch_is_correct` and `batch_loss`. 
-    # 
-    # For the first one, we want a list of booleans, one for each example. 
-    # Each value represents whether the model made a correct prediction (1 
-    # if the model was right and 0 if the model was wrong). It will likely 
-    # look something like:
-    #
-    #   batch_is_correct = [1, 1, 0, 1, 0, 0, ...]
-    # 
-    # For the second one, compute the loss between the predicted logit and 
-    # the true label, and store this in `losses`. For instance:
-    # 
-    #   batch_loss = [0.012, 0.718, 0.241, ...]
-    # 
-    # HINT: By default, `F.cross_entropy` will take the sum over the minibatch, 
-    # which you may not want it to do. To prevent this sum, try:
-    # 
-    #   `F.cross_entropy(logits, labels, reduction='none')`
-    # 
-    # As another hint, make sure that `batch_is_correct` and `batch_loss` are 
-    # python lists (not numpy arrays and not torch tensors). To convert a 
-    # torch tensor to a list, use: `x.numpy().tolist()`. 
-    # 
-    # Our solution is 2-3 lines of code. 
-    # 
-    # Pseudocode:
-    # -- 
-    # batch_loss = ...
-    # convert batch_loss to list of floats
-    # 
-    # Type:
-    # --
-    # batch_loss: List[float] (not a torch.Tensor!)
-    #   List of losses for each minibatch element
-    # batch_is_correct: List[int] (not a torch.Tensor!)
-    #   List of integers - 1 if the model got that element correct 
-    #                    - 0 if the model got that element incorrect
-    pass # remove me
-    # ================================
+    # Compute the loss for each example in the batch
+    batch_loss = F.cross_entropy(logits, labels, reduction='none').cpu().numpy().tolist()
+    # Determine if the prediction is correct
+    batch_is_correct = (preds == labels).cpu().numpy().tolist()
+
     losses.extend(batch_loss)
     is_correct.extend(batch_is_correct)
 

@@ -126,43 +126,40 @@ class TrainIdentifyReview(FlowSpec):
     kf = KFold(n_splits=3)    # create kfold splits
 
     for train_index, test_index in kf.split(X):
-      probs_ = None
-      # ===============================================
-      # FILL ME OUT
-      # 
-      # Fit a new `SentimentClassifierSystem` on the split of 
-      # `X` and `y` defined by the current `train_index` and
-      # `test_index`. Then, compute predicted probabilities on 
-      # the test set. Store these probabilities as a 1-D numpy
-      # array `probs_`.
-      # 
-      # Use `self.config.train.optimizer` to specify any hparams 
-      # like `batch_size` or `epochs`.
-      #  
-      # HINT: `X` and `y` are currently numpy objects. You will 
-      # need to convert them to torch tensors prior to training. 
-      # You may find the `TensorDataset` class useful. Remember 
-      # that `Trainer.fit` and `Trainer.predict` take `DataLoaders`
-      # as an input argument.
-      # 
-      # Our solution is ~15 lines of code.
-      # 
-      # Pseudocode:
-      # --
-      # Get train and test slices of X and y.
-      # Convert to torch tensors.
-      # Create train/test datasets using tensors.
-      # Create train/test data loaders from datasets.
-      # Create `SentimentClassifierSystem`.
-      # Create `Trainer` and call `fit`.
-      # Call `predict` on `Trainer` and the test data loader.
-      # Convert probabilities back to numpy (make sure 1D).
-      # 
-      # Types:
-      # --
-      # probs_: np.array[float] (shape: |test set|)
-      # TODO
-      # ===============================================
+      # Get train and test slices of X and y
+      X_train, X_test = X[train_index], X[test_index]
+      y_train, y_test = y[train_index], y[test_index]
+
+      # Convert to torch tensors
+      X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
+      X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
+      y_train_tensor = torch.tensor(y_train, dtype=torch.long)
+      y_test_tensor = torch.tensor(y_test, dtype=torch.long)
+
+      # Create train/test datasets using tensors
+      train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
+      test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
+
+      # Create train/test data loaders from datasets
+      train_loader = DataLoader(train_dataset, batch_size=int(self.config.train.optimizer.batch_size), shuffle=True)
+      test_loader = DataLoader(test_dataset, batch_size=int(self.config.train.optimizer.batch_size), shuffle=False)
+
+      # Create `SentimentClassifierSystem`
+      model = SentimentClassifierSystem(self.config)
+
+      # Ensure max_epochs is correctly accessed as an integer
+      max_epochs = int(self.config.train.optimizer.get('epochs', 1))  # default to 1 if not set
+
+      # Create `Trainer` and call `fit`
+      trainer = Trainer(max_epochs=max_epochs)
+      trainer.fit(model, train_loader)
+
+      # Call `predict` on `Trainer` and the test data loader
+      probs_ = trainer.predict(model, test_loader)
+
+      # Convert probabilities back to numpy (make sure 1D)
+      probs_ = torch.cat(probs_).numpy().flatten()
+
       assert probs_ is not None, "`probs_` is not defined."
       probs[test_index] = probs_
 
@@ -189,26 +186,17 @@ class TrainIdentifyReview(FlowSpec):
     """
     prob = np.asarray(self.all_df.prob)
     prob = np.stack([1 - prob, prob]).T
-  
+
     # rank label indices by issues
-    ranked_label_issues = None
-    
-    # =============================
-    # FILL ME OUT
-    # 
-    # Apply confidence learning to labels and out-of-sample
-    # predicted probabilities. 
-    # 
-    # HINT: use cleanlab. See tutorial. 
-    # 
-    # Our solution is one function call.
-    # 
-    # Types
-    # --
-    # ranked_label_issues: List[int]
-    # TODO
-    # =============================
+    ranked_label_issues = find_label_issues(
+      labels=self.all_df.label.values,
+      pred_probs=prob
+    )
+
     assert ranked_label_issues is not None, "`ranked_label_issues` not defined."
+
+    # Convert indices to integers if they are not
+    ranked_label_issues = [int(idx) for idx in ranked_label_issues]
 
     # save this to class
     self.issues = ranked_label_issues
@@ -216,9 +204,12 @@ class TrainIdentifyReview(FlowSpec):
 
     # overwrite label for all the entries in all_df
     for index in self.issues:
-      label = self.all_df.loc[index, 'label']
-      # we FLIP the label!
-      self.all_df.loc[index, 'label'] = 1 - label
+      if index in self.all_df.index:
+        label = self.all_df.loc[index, 'label']
+        # we FLIP the label!
+        self.all_df.loc[index, 'label'] = 1 - label
+      else:
+        print(f'Index {index} not found in DataFrame')
 
     self.next(self.review)
 
@@ -291,33 +282,23 @@ class TrainIdentifyReview(FlowSpec):
     train_size = len(dm.train_dataset)
     dev_size = len(dm.dev_dataset)
 
-    # ====================================
-    # FILL ME OUT
-    # 
-    # Overwrite the dataframe in each dataset with `all_df`. Make sure to 
-    # select the right indices. Since `all_df` contains the corrected labels,
-    # training on it will incorporate cleanlab's re-annotations.
-    # 
-    # Pseudocode:
-    # --
-    # dm.train_dataset.data = training slice of self.all_df
-    # dm.dev_dataset.data = dev slice of self.all_df
-    # dm.test_dataset.data = test slice of self.all_df
-    # TODO
-    # # ====================================
+    # Overwrite the dataframe in each dataset with `all_df`.
+    dm.train_dataset.data = self.all_df.iloc[:train_size]
+    dm.dev_dataset.data = self.all_df.iloc[train_size:train_size + dev_size]
+    dm.test_dataset.data = self.all_df.iloc[train_size + dev_size:]
 
     # start from scratch
     system = SentimentClassifierSystem(self.config)
-    trainer = Trainer(max_epochs = self.config.train.optimizer.max_epochs)
+    trainer = Trainer(max_epochs=int(self.config.train.optimizer.max_epochs))
 
     trainer.fit(system, dm)
-    trainer.test(system, dm, ckpt_path = 'best')
+    trainer.test(system, dm, ckpt_path='best')
     results = system.test_results
 
     pprint(results)
 
     log_file = join(LOG_DIR, 'conflearn.json')
-    os.makedirs(LOG_DIR, exist_ok = True)
+    os.makedirs(LOG_DIR, exist_ok=True)
     to_json(results, log_file)  # save to disk
 
     self.next(self.end)

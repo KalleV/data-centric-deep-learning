@@ -21,310 +21,299 @@ from conflearn.paths import DATA_DIR, LOG_DIR, CONFIG_DIR
 
 
 class TrainIdentifyReview(FlowSpec):
-  r"""A MetaFlow that trains a sentiment classifier on reviews of luxury beauty
-  products using PyTorch Lightning, identifies data quality issues using CleanLab, 
-  and prepares them for review in LabelStudio.
+    r"""A MetaFlow that trains a sentiment classifier on reviews of luxury beauty
+    products using PyTorch Lightning, identifies data quality issues using CleanLab, 
+    and prepares them for review in LabelStudio.
 
-  Arguments
-  ---------
-  config (str, default: ./config.py): path to a configuration file
-  """
-  config_path = Parameter('config', help = 'path to config file', default='./train.json')
-
-  @step
-  def start(self):
-    r"""Start node.
-    Set random seeds for reproducibility.
+    Arguments
+    ---------
+    config (str, default: ./config.py): path to a configuration file
     """
-    random.seed(42)
-    np.random.seed(42)
-    torch.manual_seed(42)
+    config_path = Parameter(
+        'config', help='path to config file', default='./train.json')
 
-    self.next(self.init_system)
+    @step
+    def start(self):
+        r"""Start node.
+        Set random seeds for reproducibility.
+        """
+        random.seed(42)
+        np.random.seed(42)
+        torch.manual_seed(42)
 
-  @step
-  def init_system(self):
-    r"""Instantiates a data module, pytorch lightning module, 
-    and lightning trainer instance.
-    """
-    # configuration files contain all hyperparameters
-    config = load_config(join(CONFIG_DIR, self.config_path))
+        self.next(self.init_system)
 
-    # a callback to save best model weights
-    checkpoint_callback = ModelCheckpoint(
-      dirpath = config.train.ckpt_dir,
-      monitor = 'dev_loss',
-      mode = 'min',    # look for lowest `dev_loss`
-      save_top_k = 1,  # save top 1 checkpoints
-      verbose = True,
-    )
+    @step
+    def init_system(self):
+        r"""Instantiates a data module, pytorch lightning module, 
+        and lightning trainer instance.
+        """
+        # configuration files contain all hyperparameters
+        config = load_config(join(CONFIG_DIR, self.config_path))
 
-    trainer = Trainer(
-      max_epochs = config.train.optimizer.max_epochs,
-      callbacks = [checkpoint_callback],
-    )
+        # a callback to save best model weights
+        checkpoint_callback = ModelCheckpoint(
+            dirpath=config.train.ckpt_dir,
+            monitor='dev_loss',
+            mode='min',    # look for lowest `dev_loss`
+            save_top_k=1,  # save top 1 checkpoints
+            verbose=True,
+        )
 
-    # when we save these objects to a `step`, they will be available
-    # for use in the next step, through not steps after.
-    self.trainer = trainer
-    self.config = config
+        trainer = Trainer(
+            max_epochs=config.train.optimizer.max_epochs,
+            callbacks=[checkpoint_callback],
+        )
 
-    self.next(self.train_test)
+        # when we save these objects to a `step`, they will be available
+        # for use in the next step, through not steps after.
+        self.trainer = trainer
+        self.config = config
 
-  @step
-  def train_test(self):
-    """Calls `fit` on the trainer.
-    
-    We first train and (offline) evaluate the model to see what 
-    performance would be without any improvements to data quality.
-    """
-    # a data module wraps around training, dev, and test datasets
-    dm = ReviewDataModule(self.config)
+        self.next(self.train_test)
 
-    # a PyTorch Lightning system wraps around model logic
-    system = SentimentClassifierSystem(self.config)
+    @step
+    def train_test(self):
+        """Calls `fit` on the trainer.
 
-    # Call `fit` on the trainer with `system` and `dm`.
-    # Our solution is one line.
-    self.trainer.fit(system, dm)
-    self.trainer.test(system, dm, ckpt_path = 'best')
+        We first train and (offline) evaluate the model to see what 
+        performance would be without any improvements to data quality.
+        """
+        # a data module wraps around training, dev, and test datasets
+        dm = ReviewDataModule(self.config)
 
-    # results are saved into the system
-    results = system.test_results
+        # a PyTorch Lightning system wraps around model logic
+        system = SentimentClassifierSystem(self.config)
 
-    # print results to command line
-    pprint(results)
+        # Call `fit` on the trainer with `system` and `dm`.
+        # Our solution is one line.
+        self.trainer.fit(system, dm)
+        self.trainer.test(system, dm, ckpt_path='best')
 
-    log_file = join(LOG_DIR, 'baseline.json')
-    os.makedirs(LOG_DIR, exist_ok = True)
-    to_json(results, log_file)  # save to disk
+        # results are saved into the system
+        results = system.test_results
 
-    self.next(self.crossval)
-  
-  @step
-  def crossval(self):
-    r"""Confidence learning requires cross validation to compute 
-    out-of-sample probabilities for every element. Each element
-    will appear in a single cross validation split exactly once. 
-    """
-    dm = ReviewDataModule(self.config)
-    # combine training and dev datasets
-    X = np.concatenate([
-      np.asarray(dm.train_dataset.embedding),
-      np.asarray(dm.dev_dataset.embedding),
-      np.asarray(dm.test_dataset.embedding),
-    ])
-    y = np.concatenate([
-      np.asarray(dm.train_dataset.data.label),
-      np.asarray(dm.dev_dataset.data.label),
-      np.asarray(dm.test_dataset.data.label),
-    ])
+        # print results to command line
+        pprint(results)
 
-    probs = np.zeros(len(X))  # we will fill this in
+        log_file = join(LOG_DIR, 'baseline.json')
+        os.makedirs(LOG_DIR, exist_ok=True)
+        to_json(results, log_file)  # save to disk
 
-    # https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.KFold.html
-    kf = KFold(n_splits=3)    # create kfold splits
+        self.next(self.crossval)
 
-    for train_index, test_index in kf.split(X):
-      # Get train and test slices of X and y
-      X_train, X_test = X[train_index], X[test_index]
-      y_train, y_test = y[train_index], y[test_index]
+    @step
+    def crossval(self):
+        r"""Confidence learning requires cross validation to compute 
+        out-of-sample probabilities for every element. Each element
+        will appear in a single cross validation split exactly once. 
+        """
+        dm = ReviewDataModule(self.config)
+        # combine training and dev datasets
+        X = np.concatenate([
+            np.asarray(dm.train_dataset.embedding),
+            np.asarray(dm.dev_dataset.embedding),
+            np.asarray(dm.test_dataset.embedding),
+        ])
+        y = np.concatenate([
+            np.asarray(dm.train_dataset.data.label),
+            np.asarray(dm.dev_dataset.data.label),
+            np.asarray(dm.test_dataset.data.label),
+        ])
 
-      # Convert to torch tensors
-      X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
-      X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
-      y_train_tensor = torch.tensor(y_train, dtype=torch.long)
-      y_test_tensor = torch.tensor(y_test, dtype=torch.long)
+        probs = np.zeros(len(X))  # we will fill this in
 
-      # Create train/test datasets using tensors
-      train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
-      test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
+        # https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.KFold.html
+        kf = KFold(n_splits=3)    # create kfold splits
 
-      # Create train/test data loaders from datasets
-      train_loader = DataLoader(train_dataset, batch_size=int(self.config.train.optimizer.batch_size), shuffle=True)
-      test_loader = DataLoader(test_dataset, batch_size=int(self.config.train.optimizer.batch_size), shuffle=False)
+        for train_index, test_index in kf.split(X):
+            probs_ = None
 
-      # Create `SentimentClassifierSystem`
-      model = SentimentClassifierSystem(self.config)
+            X_train, X_test = X[train_index], X[test_index]
+            y_train, y_test = y[train_index], y[test_index]
 
-      # Ensure max_epochs is correctly accessed as an integer
-      max_epochs = int(self.config.train.optimizer.get('epochs', 1))  # default to 1 if not set
+            X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
+            X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
+            y_train_tensor = torch.tensor(y_train, dtype=torch.int32)
+            y_test_tensor = torch.tensor(y_test, dtype=torch.int32)
 
-      # Create `Trainer` and call `fit`
-      trainer = Trainer(max_epochs=max_epochs)
-      trainer.fit(model, train_loader)
+            train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
+            test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
 
-      # Call `predict` on `Trainer` and the test data loader
-      probs_ = trainer.predict(model, test_loader)
+            train_loader = DataLoader(
+                train_dataset, batch_size=self.config.train.optimizer.batch_size, shuffle=True)
+            test_loader = DataLoader(
+                test_dataset, batch_size=self.config.train.optimizer.batch_size)
 
-      # Convert probabilities back to numpy (make sure 1D)
-      probs_ = torch.cat(probs_).numpy().flatten()
+            system = SentimentClassifierSystem(self.config)
 
-      assert probs_ is not None, "`probs_` is not defined."
-      probs[test_index] = probs_
+            trainer = Trainer(
+                max_epochs=self.config.train.optimizer.max_epochs)
+            trainer.fit(system, train_loader)
 
-    # create a single dataframe with all input features
-    all_df = pd.concat([
-      dm.train_dataset.data,
-      dm.dev_dataset.data,
-      dm.test_dataset.data,
-    ])
-    all_df = all_df.reset_index(drop=True)
-    # add out-of-sample probabilities to the dataframe
-    all_df['prob'] = probs
+            predictions = trainer.predict(system, test_loader)
+            probs_ = torch.cat(predictions, dim=0).numpy().flatten()
+            assert probs_ is not None, "`probs_` is not defined."
+            probs[test_index] = probs_
 
-    # save to excel file
-    all_df.to_csv(join(DATA_DIR, 'prob.csv'), index=False)
+        # create a single dataframe with all input features
+        all_df = pd.concat([
+            dm.train_dataset.data,
+            dm.dev_dataset.data,
+            dm.test_dataset.data,
+        ])
+        all_df = all_df.reset_index(drop=True)
+        # add out-of-sample probabilities to the dataframe
+        all_df['prob'] = probs
 
-    self.all_df = all_df
-    self.next(self.inspect)
+        # save to excel file
+        all_df.to_csv(join(DATA_DIR, 'prob.csv'), index=False)
 
-  @step
-  def inspect(self):
-    r"""Use confidence learning over examples to identify labels that 
-    likely have issues with the `cleanlab` tool. 
-    """
-    prob = np.asarray(self.all_df.prob)
-    prob = np.stack([1 - prob, prob]).T
+        self.all_df = all_df
+        self.next(self.inspect)
 
-    # rank label indices by issues
-    ranked_label_issues = find_label_issues(
-      labels=self.all_df.label.values,
-      pred_probs=prob
-    )
+    @step
+    def inspect(self):
+        r"""Use confidence learning over examples to identify labels that 
+        likely have issues with the `cleanlab` tool. 
+        """
+        prob = np.asarray(self.all_df.prob)
+        prob = np.stack([1 - prob, prob]).T
 
-    assert ranked_label_issues is not None, "`ranked_label_issues` not defined."
+        # rank label indices by issues
+        ranked_label_issues = None
 
-    # Convert indices to integers if they are not
-    ranked_label_issues = [int(idx) for idx in ranked_label_issues]
+        ranked_label_issues = find_label_issues(labels=self.all_df.label.values,
+                                                pred_probs=prob,
+                                                return_indices_ranked_by="self_confidence")
 
-    # save this to class
-    self.issues = ranked_label_issues
-    print(f'{len(ranked_label_issues)} label issues found.')
+        assert ranked_label_issues is not None, "`ranked_label_issues` not defined."
 
-    # overwrite label for all the entries in all_df
-    for index in self.issues:
-      if index in self.all_df.index:
-        label = self.all_df.loc[index, 'label']
-        # we FLIP the label!
-        self.all_df.loc[index, 'label'] = 1 - label
-      else:
-        print(f'Index {index} not found in DataFrame')
+        # save this to class
+        self.issues = ranked_label_issues
+        print(f'{len(ranked_label_issues)} label issues found.')
 
-    self.next(self.review)
+        # overwrite label for all the entries in all_df
+        for index in self.issues:
+            label = self.all_df.loc[index, 'label']
+            # we FLIP the label!
+            self.all_df.loc[index, 'label'] = 1 - label
 
-  @step
-  def review(self):
-    r"""Format the data quality issues found such that they are ready to be 
-    imported into LabelStudio. We expect the following format:
+        self.next(self.review)
 
-    [
-      {
-        "data": {
-          "text": <review text>
-        },
-        "predictions": [
+    @step
+    def review(self):
+        r"""Format the data quality issues found such that they are ready to be 
+        imported into LabelStudio. We expect the following format:
+
+        [
           {
-            "value": {
-              "choices": [
-                  "Positive"
-              ]
+            "data": {
+              "text": <review text>
             },
-            "from_name": "sentiment",
-            "to_name": "text",
-            "type": "choices"
+            "predictions": [
+              {
+                "value": {
+                  "choices": [
+                      "Positive"
+                  ]
+                },
+                "from_name": "sentiment",
+                "to_name": "text",
+                "type": "choices"
+              }
+            ]
           }
         ]
-      }
-    ]
 
-    See https://labelstud.io/guide/predictions.html#Import-pre-annotations-for-text.and
+        See https://labelstud.io/guide/predictions.html#Import-pre-annotations-for-text.and
 
-    You do not need to complete anything in this function. However, look through the 
-    code and make sure the operations and output make sense.
-    """
-    outputs = []
-    for index in self.issues:
-      row = self.all_df.iloc[index]
-      output = {
-        'data': {
-          'text': str(row.review),
-        },
-        'predictions': [{
-          'result': [
-            {
-              'value': {
-                'choices': [
-                  'Positive' if row.label == 1 else 'Negative'
-                ]
-              },
-              'id': f'data-{index}',
-              'from_name': 'sentiment',
-              'to_name': 'text',
-              'type': 'choices',
-            },
-          ],
-        }],
-      }
-      outputs.append(output)
+        You do not need to complete anything in this function. However, look through the 
+        code and make sure the operations and output make sense.
+        """
+        outputs = []
+        for index in self.issues:
+            row = self.all_df.iloc[index]
+            output = {
+                'data': {
+                    'text': str(row.review),
+                },
+                'predictions': [{
+                    'result': [
+                        {
+                            'value': {
+                                'choices': [
+                                    'Positive' if row.label == 1 else 'Negative'
+                                ]
+                            },
+                            'id': f'data-{index}',
+                            'from_name': 'sentiment',
+                            'to_name': 'text',
+                            'type': 'choices',
+                        },
+                    ],
+                }],
+            }
+            outputs.append(output)
 
-    # save to file
-    preanno_path = join(self.config.review.save_dir, 'pre-annotations.json')
-    to_json(outputs, preanno_path)
+        # save to file
+        preanno_path = join(self.config.review.save_dir,
+                            'pre-annotations.json')
+        to_json(outputs, preanno_path)
 
-    self.next(self.retrain_retest)
+        self.next(self.retrain_retest)
 
-  @step
-  def retrain_retest(self):
-    r"""Retrain without reviewing. Let's assume all the labels that 
-    confidence learning suggested to flip are indeed erroneous."""
-    dm = ReviewDataModule(self.config)
-    train_size = len(dm.train_dataset)
-    dev_size = len(dm.dev_dataset)
+    @step
+    def retrain_retest(self):
+        r"""Retrain without reviewing. Let's assume all the labels that 
+        confidence learning suggested to flip are indeed erroneous."""
+        dm = ReviewDataModule(self.config)
+        train_size = len(dm.train_dataset)
+        dev_size = len(dm.dev_dataset)
 
-    # Overwrite the dataframe in each dataset with `all_df`.
-    dm.train_dataset.data = self.all_df.iloc[:train_size]
-    dm.dev_dataset.data = self.all_df.iloc[train_size:train_size + dev_size]
-    dm.test_dataset.data = self.all_df.iloc[train_size + dev_size:]
+        dm.train_dataset.data = self.all_df.iloc[:train_size]
+        dm.dev_dataset.data = self.all_df.iloc[train_size:train_size+dev_size]
+        dm.test_dataset.data = self.all_df.iloc[train_size+dev_size:]
 
-    # start from scratch
-    system = SentimentClassifierSystem(self.config)
-    trainer = Trainer(max_epochs=int(self.config.train.optimizer.max_epochs))
+        # start from scratch
+        system = SentimentClassifierSystem(self.config)
+        trainer = Trainer(max_epochs=self.config.train.optimizer.max_epochs)
 
-    trainer.fit(system, dm)
-    trainer.test(system, dm, ckpt_path='best')
-    results = system.test_results
+        trainer.fit(system, dm)
+        trainer.test(system, dm, ckpt_path='best')
+        results = system.test_results
 
-    pprint(results)
+        pprint(results)
 
-    log_file = join(LOG_DIR, 'conflearn.json')
-    os.makedirs(LOG_DIR, exist_ok=True)
-    to_json(results, log_file)  # save to disk
+        log_file = join(LOG_DIR, 'conflearn.json')
+        os.makedirs(LOG_DIR, exist_ok=True)
+        to_json(results, log_file)  # save to disk
 
-    self.next(self.end)
+        self.next(self.end)
 
-  @step
-  def end(self):
-    """End node!"""
-    print('done! great work!')
+    @step
+    def end(self):
+        """End node!"""
+        print('done! great work!')
 
 
 if __name__ == "__main__":
-  """
-  To validate this flow, run `python conflearn.py`. To list
-  this flow, run `python conflearn.py show`. To execute
-  this flow, run `python conflearn.py run`.
+    """
+    To validate this flow, run `python conflearn.py`. To list
+    this flow, run `python conflearn.py show`. To execute
+    this flow, run `python conflearn.py run`.
 
-  You may get PyLint errors from `numpy.random`. If so,
-  try adding the flag:
+    You may get PyLint errors from `numpy.random`. If so,
+    try adding the flag:
 
-    `python conflearn.py --no-pylint run`
+      `python conflearn.py --no-pylint run`
 
-  If you face a bug and the flow fails, you can continue
-  the flow at the point of failure:
+    If you face a bug and the flow fails, you can continue
+    the flow at the point of failure:
 
-    `python conflearn.py resume`
-  
-  You can specify a run id as well.
-  """
-  flow = TrainIdentifyReview()
+      `python conflearn.py resume`
+
+    You can specify a run id as well.
+    """
+    flow = TrainIdentifyReview()
+    

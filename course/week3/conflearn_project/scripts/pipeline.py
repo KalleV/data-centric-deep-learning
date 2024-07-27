@@ -19,6 +19,7 @@ from conflearn.system import ReviewDataModule, SentimentClassifierSystem
 from conflearn.utils import load_config, to_json
 from conflearn.paths import DATA_DIR, LOG_DIR, CONFIG_DIR
 
+
 class TrainIdentifyReview(FlowSpec):
   r"""A MetaFlow that trains a sentiment classifier on reviews of luxury beauty
   products using PyTorch Lightning, identifies data quality issues using CleanLab, 
@@ -28,7 +29,7 @@ class TrainIdentifyReview(FlowSpec):
   ---------
   config (str, default: ./config.py): path to a configuration file
   """
-  config_path = Parameter('config', help='path to config file', default='./train.json')
+  config_path = Parameter('config', help = 'path to config file', default='./train.json')
 
   @step
   def start(self):
@@ -51,16 +52,16 @@ class TrainIdentifyReview(FlowSpec):
 
     # a callback to save best model weights
     checkpoint_callback = ModelCheckpoint(
-      dirpath=config.train.ckpt_dir,
-      monitor='dev_loss',
-      mode='min',  # look for lowest `dev_loss`
-      save_top_k=1,  # save top 1 checkpoints
-      verbose=True,
+      dirpath = config.train.ckpt_dir,
+      monitor = 'dev_loss',
+      mode = 'min',    # look for lowest `dev_loss`
+      save_top_k = 1,  # save top 1 checkpoints
+      verbose = True,
     )
 
     trainer = Trainer(
-      max_epochs=config.train.optimizer.max_epochs,
-      callbacks=[checkpoint_callback],
+      max_epochs = config.train.optimizer.max_epochs,
+      callbacks = [checkpoint_callback],
     )
 
     # when we save these objects to a `step`, they will be available
@@ -86,7 +87,7 @@ class TrainIdentifyReview(FlowSpec):
     # Call `fit` on the trainer with `system` and `dm`.
     # Our solution is one line.
     self.trainer.fit(system, dm)
-    self.trainer.test(system, dm, ckpt_path='best')
+    self.trainer.test(system, dm, ckpt_path = 'best')
 
     # results are saved into the system
     results = system.test_results
@@ -95,7 +96,7 @@ class TrainIdentifyReview(FlowSpec):
     pprint(results)
 
     log_file = join(LOG_DIR, 'baseline.json')
-    os.makedirs(LOG_DIR, exist_ok=True)
+    os.makedirs(LOG_DIR, exist_ok = True)
     to_json(results, log_file)  # save to disk
 
     self.next(self.crossval)
@@ -122,7 +123,7 @@ class TrainIdentifyReview(FlowSpec):
     probs = np.zeros(len(X))  # we will fill this in
 
     # https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.KFold.html
-    kf = KFold(n_splits=3)  # create kfold splits
+    kf = KFold(n_splits=3)    # create kfold splits
 
     for train_index, test_index in kf.split(X):
       # Get train and test slices of X and y
@@ -196,9 +197,6 @@ class TrainIdentifyReview(FlowSpec):
 
     # Convert indices to integers if they are not
     ranked_label_issues = [int(idx) for idx in ranked_label_issues]
-
-    # Ensure indices are unique
-    ranked_label_issues = list(set(ranked_label_issues))
 
     # save this to class
     self.issues = ranked_label_issues

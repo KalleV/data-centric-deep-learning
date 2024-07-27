@@ -54,9 +54,11 @@ class TrainFlow(FlowSpec):
         # Any augmentations to apply to the training dataset with the goal of 
         # enlarging the effective dataset size via "self supervision": an augmented
         # data point maintains the same label.
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomRotation(10),
+        transforms.ToTensor(),
         # TODO
         # ================================
-        transforms.ToTensor(),
       ])
     else:
       transform = transforms.ToTensor()
@@ -107,7 +109,7 @@ class TrainFlow(FlowSpec):
 
     # Load the best checkpoint and compute results using `self.trainer.test`
     self.trainer.test(system, dm, ckpt_path = 'best')
-    results = self.system.test_results
+    results = system.test_results
 
     # print results to command line
     pprint(results)

@@ -18,9 +18,8 @@ from rag.vector import retrieve_documents, get_my_collection_name
 
 load_dotenv()
 
-
 class OptimizeRagParams(FlowSpec):
-  r"""MetaFlow to optimize a RAG hyperparameters by maximizing a retrieval 
+  r"""MetaFlow to optimize RAG hyperparameters by maximizing a retrieval 
   metric on top of an evaluation set.
 
   Arguments
@@ -30,13 +29,13 @@ class OptimizeRagParams(FlowSpec):
   """
   questions_file = Parameter(
     'questions_file', 
-    help = 'Path to generated questions', 
-    default = join(DATA_DIR, 'questions/questions.csv'),
+    help='Path to generated questions', 
+    default=join(DATA_DIR, 'questions/questions.csv'),
   )
   starpoint_api_key = Parameter(
     'starpoint_api_key', 
-    help = 'Starpoint API key', 
-    default = env['STARPOINT_API_KEY'],
+    help='Starpoint API key', 
+    default=env['STARPOINT_API_KEY'],
   )
 
   @step
@@ -50,33 +49,33 @@ class OptimizeRagParams(FlowSpec):
 
     self.next(self.get_search_space)
 
-  @step 
+  @step
   def get_search_space(self):
     r"""Define a set of RAG configurations to search over.
     """
-    # Each hyperparameter setting should loo like:
-    #   hparam = DotMap({
-    #     "embedding": "all-MiniLM-L6-v2",
-    #     "text_search_weight": 0.5,
-    #     "hyde_embeddings": False,
-    #   })
     hparams: List[DotMap] = []
-    # ===========================
-    # FILL ME OUT
-    # Define a set of hyperparameters to search over. We want to compare
-    # - two different embedding models: all-MiniLM-L6-v2 vs thenlper/gte-small
-    # - two different text search weights: 0 vs 0.5
-    # - whether to use hyde embeddings or question embeddings
-    # In total this is searching over 8 configurations. In practice, we may search
-    # over 100,000s but this should illustruate the point.
-    # TODO
-    # ===========================
+
+    # Define hyperparameters to search over
+    embeddings = ["all-MiniLM-L6-v2", "thenlper/gte-small"]
+    text_search_weights = [0, 0.5]
+    hyde_embeddings_options = [False, True]
+
+    for embedding in embeddings:
+      for weight in text_search_weights:
+        for hyde in hyde_embeddings_options:
+          hparam = DotMap({
+            "embedding": embedding,
+            "text_search_weight": weight,
+            "hyde_embeddings": hyde,
+          })
+          hparams.append(hparam)
+
     assert len(hparams) > 0, "Remember to complete the code in `get_search_space`"
-    assert len(hparams) == 8, "You should have 8 configurations" 
+    assert len(hparams) == 8, "You should have 8 configurations"
     self.hparams = hparams
     self.next(self.optimize, foreach='hparams')
 
-  @step 
+  @step
   def optimize(self):
     r"""Compute retrieval accuracy.
     :param hparam: Hyperparameter for this RAG retrieval system
@@ -98,16 +97,26 @@ class OptimizeRagParams(FlowSpec):
     for i in tqdm(range(len(questions))):
       question = questions.question.iloc[i]
       gt_id = questions.doc_id.iloc[i]
-      # ===========================
-      # FILL ME OUT
-      # Write code to do the following:
-      #   1. Perform top-3 retrieval using the question using Starpoint. To do this you will 
-      #      need to use SentenceTransformers to compute embedding. Make sure to take into account
-      #      the three hyperparameters in `hparams` to do this.
-      #   2. Track if the correct document appears in the top 3 retrieved documents.
-      #      +1 to `hits` if it does. +0 to `hits` if not.
-      # TODO
-      # ===========================
+
+      if self.input.hyde_embeddings:
+        query = questions["hypo_answers"].iloc[i]
+      else:
+        query = question
+      question_embedding = embedding_model.encode(query).tolist()
+     
+      # Retrieve top-3 documents
+      retrieved_docs = retrieve_documents(
+          api_key=self.starpoint_api_key,
+          collection_name=collection_name,
+          query_embedding=question_embedding,
+          query=question,
+          top_k=3,
+          text_search_weight=self.input.text_search_weight,
+      )
+
+      # Check if the ground truth doc_id is in the top-3 results
+      if gt_id in [doc['metadata']['doc_id'] for doc in retrieved_docs]:
+        hits += 1
 
     hit_rate = hits / float(len(questions))
     self.hit_rate = hit_rate  # save to class
@@ -126,7 +135,7 @@ class OptimizeRagParams(FlowSpec):
     for input in inputs:
       result = {
         'hit_rate': input.hit_rate,
-        **input.hparam,
+        **input.hparam.toDict(),  # Convert DotMap to dict
       }
       results.append(result)
 

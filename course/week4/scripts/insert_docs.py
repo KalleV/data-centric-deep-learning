@@ -9,7 +9,7 @@ from rag.paths import DATA_DIR
 
 
 def main(args):
-  r"""Inserts new documents in the collection.
+  r"""Inserts new documents in the collection using https://docs.starpoint.ai/create-documents/.
   """
   collection_name = get_my_collection_name(
     env['GITHUB_USERNAME'],
@@ -30,27 +30,26 @@ def main(args):
 
   documents = []
   for i in tqdm(range(len(raw)), desc='Inserting into db'):
-    doc = ""
-    # ===========================
-    # FILL ME OUT
-    # Prepare the documents to be inserted into the vector db
-    # You will need compute embeddings. Make sure to cast the embedding to a list.
-    # Please refer to `config.json` for which embedding to use:
-    # Example document:
-    # {
-    #   "embeddings": {
-    #     "values": [0.1, 0.2, 0.3, 0.4, 0.5],
-    #     "dimensionality": 5,
-    #   }, # single vector document
-    #   "metadata": {
-    #     "doc_id": "...",
-    #   }
-    # }
-    # Please add the document ID to the metadata under the key `doc_id`.
-    # Please see docs here: https://docs.starpoint.ai/create-documents 
-    # TODO
-    # ===========================
-    assert len(doc) > 0, f"Did you complete the code in `insert_docs.py`?"
+    # Extract document ID and text
+    doc_id = raw.iloc[i]['doc_id']
+    text = raw.iloc[i]['text']
+
+    # Compute the embeddings for the document text
+    embeddings = embedding_model.encode(text).tolist()
+
+    # Prepare the document to be inserted
+    doc = {
+      "embeddings": {
+        "values": embeddings,
+        "dimensionality": embedding_dim,
+      },
+      "metadata": {
+        "doc_id": doc_id,
+        "text": text
+      }
+    }
+
+    # Append the document to the list
     documents.append(doc)
 
   assert len(documents) > 0, f"Please remember to append to the documents array"

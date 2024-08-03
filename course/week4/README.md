@@ -21,3 +21,16 @@ There is code for you to complete in the following files
 - `scripts/optimizer_params.py`
 
 We recommend you to follow the instructions on Uplimit closely.
+
+### Final Hyperparameters
+
+| hit_rate         | embedding             | text_search_weight | hyde_embeddings |
+|------------------|-----------------------|--------------------|-----------------|
+| 0.8781725888324873 | all-MiniLM-L6-v2      | 0.0                | True            |
+| 0.9949238578680203 | thenlper/gte-small    | 0.5                | False           |
+| 0.9593908629441624 | all-MiniLM-L6-v2      | 0.0                | False           |
+| 0.9593908629441624 | all-MiniLM-L6-v2      | 0.5                | False           |
+| 0.8730964467005076 | thenlper/gte-small    | 0.0                | True            |
+| 0.8730964467005076 | thenlper/gte-small    | 0.5                | True            |
+| 0.8781725888324873 | all-MiniLM-L6-v2      | 0.5                | True            |
+| 0.9949238578680203 | thenlper/gte-small    | 0.0                | False           |
